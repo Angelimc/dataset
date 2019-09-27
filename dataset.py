@@ -10,7 +10,7 @@ class Experiment(enum.Enum):
     gp_family_fold = 3
 
 
-def get_feature_filenames(apks, Corpus):
+def get_feature_filenames(apks, Corpus, extension):
     """ Return list of paths that contain the features for the given apks.
     Parameters
     ----------
@@ -29,7 +29,7 @@ def get_feature_filenames(apks, Corpus):
         apk = apk.rstrip("\n\r")
         arrays = apk.split("/")
         name = os.path.splitext(arrays[-1])[0]
-        absolute_path = os.path.abspath(os.path.join(Corpus, name+".data"))
+        absolute_path = os.path.abspath(os.path.join(Corpus, name+ extension))
         if os.path.isfile(absolute_path):
             samplenames.append(absolute_path)
     print(indexx)
@@ -62,13 +62,10 @@ def load_data(model, FeatureVectorizer, x_Btrain_samplenames, x_Mtrain_samplenam
     return dict(X=X, y=y, train_idx=train_idx, model=model)
 
 
-def load_csbd(experiment, fold):
-    """Load and return the csbd dataset for given experiment and family fold.
+def load_drebin(fold):
+    """Load and return the Drebin dataset for Google play family fold experiment and family fold.
     Parameters
     ----------
-    experiment : Experiment, between 1 and 3
-        The experiment to load: 1 = Virus total family fold, 2 = Train on virus
-        total and test on google play, 3 = Google play family fold
     fold : integer, between 0 and 9
         The family fold to load.
     Returns
@@ -98,15 +95,65 @@ def load_csbd(experiment, fold):
     Mtest_file = "/nfs/zeus/michaelcao/DatasetsForTools/Experiments_Updated_August_10/GP_10_Family_Fold_Malware_Test_"\
                  +str(fold)+".txt"
 
-    x_Btrain_samplenames = get_feature_filenames(Btrain_file, Corpus)
+    x_Btrain_samplenames = get_feature_filenames(Btrain_file, Corpus, ".data")
     print(len(x_Btrain_samplenames))
-    x_Mtrain_samplenames = get_feature_filenames(Mtrain_file, Corpus)
+    x_Mtrain_samplenames = get_feature_filenames(Mtrain_file, Corpus, ".data")
     print(len(x_Mtrain_samplenames))
-    x_Btest_samplenames = get_feature_filenames(Btest_file, Corpus)
+    x_Btest_samplenames = get_feature_filenames(Btest_file, Corpus, ".data")
     print(len(x_Btest_samplenames))
-    x_Mtest_samplenames = get_feature_filenames(Mtest_file, Corpus)
+    x_Mtest_samplenames = get_feature_filenames(Mtest_file, Corpus, ".data")
     print(len(x_Mtest_samplenames))
 
     return load_data(model, FeatureVectorizer, x_Btrain_samplenames, x_Mtrain_samplenames, x_Btest_samplenames,
                      x_Mtest_samplenames)
 
+
+def MyTokenizer(Str):
+    return Str.split()
+
+
+def load_csbd(fold):
+    """Load and return the CSBD dataset for Google play family fold experiment and family fold.
+    Parameters
+    ----------
+    fold : integer, between 0 and 9
+        The family fold to load.
+    Returns
+    -------
+    data : dictionary
+        Dictionary, the attributes are:
+        X : array, shape = [n_samples, n_features]
+            A {n_samples by n_samples} size matrix containing data
+        y : array, shape = [n_samples]
+            Labels (0 = benign, 1 = malware)
+        training_indices : array,
+            Indices on which the classifier has been trained
+        model: string
+            filepath containing classification model
+    """
+    Corpus = '/data/Alex/malware-tools/csbd/data/'
+    model = "/data/Alex/malware-tools/Drebin/GooglePlay/FamilyFold/Fold"+str(fold)+"/modelFoldLinearSVM.pkl"
+
+    FeatureVectorizer = TF(input='filename', lowercase=False, token_pattern=None, tokenizer=MyTokenizer,
+                           binary=True, dtype=np.float64)
+
+    Btrain_file = "/nfs/zeus/michaelcao/DatasetsForTools/Experiments_Updated_August_10/GP_10_Family_Fold_Benign_Train_"\
+                  +str(fold)+".txt"
+    Mtrain_file = "/nfs/zeus/michaelcao/DatasetsForTools/Experiments_Updated_August_10/GP_10_Family_Fold_Malware_Train_"\
+                  +str(fold)+".txt"
+    Btest_file = "/nfs/zeus/michaelcao/DatasetsForTools/Experiments_Updated_August_10/GP_10_Family_Fold_Benign_Test_"\
+                 +str(fold)+".txt"
+    Mtest_file = "/nfs/zeus/michaelcao/DatasetsForTools/Experiments_Updated_August_10/GP_10_Family_Fold_Malware_Test_"\
+                 +str(fold)+".txt"
+
+    x_Btrain_samplenames = get_feature_filenames(Btrain_file, Corpus, ".txt")
+    print(len(x_Btrain_samplenames))
+    x_Mtrain_samplenames = get_feature_filenames(Mtrain_file, Corpus, ".txt")
+    print(len(x_Mtrain_samplenames))
+    x_Btest_samplenames = get_feature_filenames(Btest_file, Corpus, ".txt")
+    print(len(x_Btest_samplenames))
+    x_Mtest_samplenames = get_feature_filenames(Mtest_file, Corpus, ".txt")
+    print(len(x_Mtest_samplenames))
+
+    return load_data(model, FeatureVectorizer, x_Btrain_samplenames, x_Mtrain_samplenames, x_Btest_samplenames,
+                     x_Mtest_samplenames)
