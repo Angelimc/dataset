@@ -2,6 +2,14 @@ import enum
 import numpy as np
 import os
 from sklearn.feature_extraction.text import TfidfVectorizer as TF
+from sklearn.feature_selection import SelectKBest, chi2
+import logging
+import joblib
+
+
+logging.basicConfig(level=logging.INFO)
+Logger = logging.getLogger('RandomClf.stdout')
+Logger.setLevel("INFO")
 
 
 class Experiment(enum.Enum):
@@ -37,18 +45,37 @@ def get_feature_filenames(apks, Corpus, extension):
 
 
 def load_data(model, FeatureVectorizer, x_Btrain_samplenames, x_Mtrain_samplenames, x_Btest_samplenames,
-              x_Mtest_samplenames):
+              x_Mtest_samplenames, NumFeaturesToBeSelected):
+
+    # Labels: 0 for benign and 1 for malware
     y_Btrain = np.zeros(len(x_Btrain_samplenames))
     y_Mtrain = np.ones(len(x_Mtrain_samplenames))
     y_Btest = np.zeros(len(x_Btest_samplenames))
     y_Mtest = np.ones(len(x_Mtest_samplenames))
 
-    x_samplenames = x_Mtrain_samplenames + x_Btrain_samplenames + x_Mtest_samplenames + x_Btest_samplenames
-    X = FeatureVectorizer.fit_transform(x_samplenames)
-    y = np.concatenate((y_Mtrain, y_Btrain, y_Mtest, y_Btest), axis=0)
+    x_train_samplenames = x_Mtrain_samplenames + x_Btrain_samplenames
+    x_train = FeatureVectorizer.fit_transform(x_train_samplenames)
+    y_train = np.concatenate((y_Mtrain, y_Btrain), axis=0)
+
+    x_testM = FeatureVectorizer.transform(x_Mtest_samplenames)
+    x_testB = FeatureVectorizer.transform(x_Btest_samplenames)
+
+    Features = FeatureVectorizer.get_feature_names()
+    Logger.info("Total number of features: {} ".format(len(Features)))
+
+    # FOR CSBD
+    if NumFeaturesToBeSelected != -1 and len(Features) > NumFeaturesToBeSelected:
+        Logger.info("Gonna select %s features", NumFeaturesToBeSelected)
+        FSAlgo = SelectKBest(chi2, k=NumFeaturesToBeSelected)
+        x_train = FSAlgo.fit_transform(x_train, y_train)
+        x_testM = FSAlgo.transform(x_testM)
+        x_testB = FSAlgo.transform(x_testB)
+
+    X = np.concatenate((x_train, x_testM, x_testB), axis=0)
+    y = np.concatenate((y_train, y_Mtest, y_Btest), axis=0)
 
     train_idx = []
-    for i in range(len(y_Btrain) + len(y_Mtrain)):
+    for i in range(len(y_train)):
         train_idx.append(i)
 
     print("X: ")
@@ -56,7 +83,7 @@ def load_data(model, FeatureVectorizer, x_Btrain_samplenames, x_Mtrain_samplenam
     print("y: ")
     print(y)
     print("length train data: ")
-    print(str(len(y_Btrain) + len(y_Mtrain)))
+    print(str(len(y_train)))
     print("train_idx: ")
     print(train_idx)
     return dict(X=X, y=y, train_idx=train_idx, model=model)
@@ -105,7 +132,7 @@ def load_drebin(fold):
     print(len(x_Mtest_samplenames))
 
     return load_data(model, FeatureVectorizer, x_Btrain_samplenames, x_Mtrain_samplenames, x_Btest_samplenames,
-                     x_Mtest_samplenames)
+                     x_Mtest_samplenames, -1)
 
 
 def MyTokenizer(Str):
@@ -131,8 +158,16 @@ def load_csbd(fold):
         model: string
             filepath containing classification model
     """
-    Corpus = '/data/Alex/malware-tools/csbd/data/'
+
     model = "/data/Alex/malware-tools/Drebin/GooglePlay/FamilyFold/Fold"+str(fold)+"/modelFoldLinearSVM.pkl"
+    X_filename = "/data/Angeli/visualization_tool/src/csbd_data/X_gp_familyfold_"+str(fold)+".npy"
+    y_filename = "/data/Angeli/visualization_tool/src/csbd_data/y_gp_familyfold_"+str(fold)+".npy"
+    train_idx_filename = "/data/Angeli/visualization_tool/src/csbd_data/train_idx_gp_familyfold_"+str(fold)+".npy"
+
+    if os.path.isfile(X_filename) and os.path.isfile(y_filename) and os.path.isfile(train_idx_filename):
+        return dict(X=np.load(X_filename), y=np.load(y_filename), train_idx=np.load(train_idx_filename), model=model)
+
+    Corpus = '/data/Alex/malware-tools/csbd/data/'
 
     FeatureVectorizer = TF(input='filename', lowercase=False, token_pattern=None, tokenizer=MyTokenizer,
                            binary=True, dtype=np.float64)
@@ -155,5 +190,13 @@ def load_csbd(fold):
     x_Mtest_samplenames = get_feature_filenames(Mtest_file, Corpus, ".txt")
     print(len(x_Mtest_samplenames))
 
-    return load_data(model, FeatureVectorizer, x_Btrain_samplenames, x_Mtrain_samplenames, x_Btest_samplenames,
-                     x_Mtest_samplenames)
+    data = load_data(model, FeatureVectorizer, x_Btrain_samplenames, x_Mtrain_samplenames, x_Btest_samplenames,
+                     x_Mtest_samplenames, 5000,)
+
+    # Save data to files
+    X, y, train_idx = data["X"], data["y"], data["train_idx"]
+    np.save(X_filename, X)
+    np.save(y_filename, y)
+    np.save(train_idx_filename, train_idx)
+
+    return data
