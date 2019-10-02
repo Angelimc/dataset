@@ -4,9 +4,12 @@ import os
 from sklearn.feature_extraction.text import TfidfVectorizer as TF
 from sklearn.feature_selection import SelectKBest, chi2
 import logging
-import joblib
+from joblib import dump, load
 from scipy.sparse import coo_matrix, vstack
 from tempfile import TemporaryFile
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.model_selection import GridSearchCV
+
 
 
 logging.basicConfig(level=logging.INFO)
@@ -76,6 +79,20 @@ def load_data(model, FeatureVectorizer, x_Btrain_samplenames, x_Mtrain_samplenam
     train_idx = []
     for i in range(len(y_train)):
         train_idx.append(i)
+
+    """
+    Parameters = {'n_estimators': [10,50,100,200,500,1000], 'bootstrap': [True, False],'criterion': ['gini', 'entropy']}
+    Clf = GridSearchCV(RandomForestClassifier(), Parameters, cv=5, scoring='f1', n_jobs=3)
+    RFmodels = Clf.fit(x_train, y_train)
+    BestModel = RFmodels.best_estimator_
+    """
+    RFmodels = load(model)
+    print("malware predictions:")
+    y_Mpred = RFmodels.predict(x_testM)
+    print(y_Mpred)
+    print("benign predictions:")
+    y_Bpred = RFmodels.predict(x_testB)
+    print(y_Bpred)
 
     print("X: ")
     print(X)
