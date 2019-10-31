@@ -68,7 +68,7 @@ def feature_selection_by_lasso_num(x_train, y_train, x_testM, x_testB, x_Btest_s
     return x_train, x_testM, x_testB
 
 
-def feature_selection_by_lasso_alpha(X_train, y_train, X_test, y_test, Features):
+def feature_selection_by_lasso_alpha(X_train, y_train, X_testB, X_testM, y_test, Features):
     """ Use Lasso to select features
     """
     Logger.info("Total features: {}".format(X_train.shape[1]))
@@ -80,22 +80,39 @@ def feature_selection_by_lasso_alpha(X_train, y_train, X_test, y_test, Features)
     #lasso.set_params(alpha=lassocv.alpha_)
     lassocv_calculate_alpha = 0.00026253495223639133
     lasso.set_params(alpha=lassocv_calculate_alpha)
-    # lasso.fit(X_train, y_train)
+    lasso.fit(X_train, y_train)
 
-    # For Lasso, the threshold defaults to 1e-5
-    sfm = SelectFromModel(lasso)
-    X_train = sfm.fit_transform(X_train, y_train)
-    X_test = sfm.transform(X_test)
+    X_testM = coo_matrix(X_testM)
+    if X_testB.shape[0] > 0:
+        X_testB = coo_matrix(X_testB)
+        X_test = vstack([X_testM, X_testB]).toarray()
+    else:
+        X_test = X_testM
 
-    mse = mean_squared_error(y_test, sfm.estimator_.predict(X_test))
-    train_score = sfm.estimator_.score(X_train, y_train)
-    test_score = sfm.estimator_.score(X_test, y_test)
-    coeff_used = np.sum(sfm.estimator_.coef_ != 0)
-    print("alpha selected: " + str(sfm.estimator_.alpha_))
+    print(X_train.shape)
+    print(X_test.shape)
+    print(y_train.shape)
+    print(y_test.shape)
+    mse = mean_squared_error(y_test, lasso.predict(X_test))
+    train_score = lasso.score(X_train, y_train)
+    test_score = lasso.score(X_test, y_test)
+    coeff_used = np.sum(lasso.coef_ != 0)
     print("mean squared error: " + str(mse))
     print("training score: " + str(train_score))
     print("test score: " + str(test_score))
     print("number of features used: " + str(coeff_used))
+
+    # For Lasso, the threshold defaults to 1e-5
+    sfm = SelectFromModel(lasso, prefit=True)
+    X_train = sfm.transform(X_train)
+    X_testM = sfm.transform(X_testM)
+    if X_testB.shape[0] > 0:
+        X_testB = sfm.transform(X_testB)
+
+    y_Btest = []
+    y_Mtest = np.ones(X_testM.shape[0], dtype=int)
+    if X_testB.shape[0] > 0:
+        y_Btest = np.zeros(X_testB.shape[0], dtype=int)
 
     mask = sfm.get_support() #list of booleans
     new_features = []
@@ -103,9 +120,8 @@ def feature_selection_by_lasso_alpha(X_train, y_train, X_test, y_test, Features)
         if bool:
             new_features.append(feature)
     Logger.info("selected {} features".format(len(new_features)))
-    assert(len(new_features) == X_train.shape[1] and X_train.shape[1] == X_test.shape[1])
 
-    return X_train, X_test, new_features
+    return X_train, X_testB, X_testM, y_Btest, y_Mtest, new_features, lasso
 
     # lasso = Lasso()
     # lasso.fit(X_train, y_train)
@@ -178,9 +194,11 @@ def load_data(model, FeatureVectorizer, X_Btrain_samplenames, X_Mtrain_samplenam
     # Extract features
     X_train_samplenames = X_Mtrain_samplenames + X_Btrain_samplenames
     X_train = FeatureVectorizer.fit_transform(X_train_samplenames)
-    X_test_samplenames = X_Mtest_samplenames + X_Btest_samplenames
-    X_test = FeatureVectorizer.transform(X_test_samplenames)
-    assert(len(y_train) == X_train.shape[0] and len(y_test) == X_test.shape[0])
+    X_testM = FeatureVectorizer.transform(X_Mtest_samplenames)
+    X_testB = []
+    if len(X_Btest_samplenames) > 0:
+        X_testB = FeatureVectorizer.transform(X_Btest_samplenames)
+    #assert(len(y_train) == X_train.shape[0] and len(y_test) == X_test.shape[0])
 
     # Create new model (ie. with feature selection) if file path contains new_models
     if "new_models" in model:
@@ -190,13 +208,13 @@ def load_data(model, FeatureVectorizer, X_Btrain_samplenames, X_Mtrain_samplenam
             ClfLinear = GridSearchCV(LinearSVC(), Parameters, cv=5, scoring='f1', n_jobs=10)
             SVMLinearModels = ClfLinear.fit(X_train, y_train)
             dump(ClfLinear, model)
-        else:
-            ClfLinear = joblib.load(model)
-        SVMLinearModels = ClfLinear.fit(X_train, y_train)
-        train_score = SVMLinearModels.score(X_train, y_train)
-        test_score = SVMLinearModels.score(X_test, y_test)
-        print("linear svc training score: " + str(train_score))
-        print("linear svc test score: " + str(test_score))
+        # else:
+        #     ClfLinear = joblib.load(model)
+        # SVMLinearModels = ClfLinear.fit(X_train, y_train)
+        # train_score = SVMLinearModels.score(X_train, y_train)
+        # test_score = SVMLinearModels.score(X_test, y_test)
+        # print("linear svc training score: " + str(train_score))
+        # print("linear svc test score: " + str(test_score))
 
     # Get feature names
     Features = FeatureVectorizer.get_feature_names()
@@ -204,34 +222,47 @@ def load_data(model, FeatureVectorizer, X_Btrain_samplenames, X_Mtrain_samplenam
 
     # For drebin
     #X_train, x_testM, x_testB, Features = feature_selection_by_lasso_alpha(X_train, y_train, X_test, y_test, Features)
-    X_train, X_test, Features = feature_selection_by_lasso_alpha(X_train, y_train, X_test, y_test, Features)
-
-    print(X_train.shape[1])
-    print(X_test.shape[1])
-    print("X_train")
-    print(X_train)
-    print("x_testM")
-    print(X_test)
-    print("y_train")
-    print(y_train)
+    X_train, X_testB, X_testM, y_Btest, y_Mtest, Features, lasso = \
+        feature_selection_by_lasso_alpha(X_train, y_train, X_testB, X_testM, y_test, Features)
 
     # FOR CSBD
     if NumFeaturesToBeSelected != -1 and len(Features) > NumFeaturesToBeSelected:
         Logger.info("Gonna select %s features", NumFeaturesToBeSelected)
         FSAlgo = SelectKBest(chi2, k=NumFeaturesToBeSelected)
         X_train = FSAlgo.fit_transform(X_train, y_train)
-        X_test = FSAlgo.transform(X_test)
+        X_testM = FSAlgo.transform(X_testM)
+        if len(X_Btest_samplenames) > 0:
+            X_testB = FSAlgo.transform(X_testB)
 
     # Combine train and test data in a matrix, to create X (shape = [n_samples, n_features])
     X_train = coo_matrix(X_train)
-    X_test = coo_matrix(X_test)
-    X = vstack([X_train, X_test]).toarray()
-    y = np.concatenate((y_train, y_test), axis=0)
+    X_testM = coo_matrix(X_testM)
+    if len(X_Btest_samplenames) > 0:
+        X_testB = coo_matrix(X_testB)
+        X_test = vstack([X_testM, X_testB]).toarray()
+        X = vstack([X_train, X_testM, X_testB]).toarray()
+        y_test = np.concatenate((y_Mtest, y_Btest), axis=0)
+        y = np.concatenate((y_train, y_Mtest, y_Btest), axis=0)
+    else:
+        X = vstack([X_train, X_testM]).toarray()
+        X_test = X_testM
+        y = np.concatenate((y_train, y_Mtest), axis=0)
+        y_test = y_Mtest
+
+    assert(len(Features) == X_train.shape[1] and X_train.shape[1] == X_test.shape[1])
+    assert(X_train.shape[0] == len(y_train) and X_test.shape[0] == len(y_test))
 
     train_idx = []
     for i in range(len(y_train)):
         train_idx.append(i)
 
+    assert(len(y_train) == len(train_idx))
+    print("X_train")
+    print(X_train)
+    print("x_test")
+    print(X_test)
+    print("y_train")
+    print(y_train)
     print("X: ")
     print(X)
     print("y: ")
@@ -242,6 +273,7 @@ def load_data(model, FeatureVectorizer, X_Btrain_samplenames, X_Mtrain_samplenam
     print(str(len(train_idx)))
     print("length of features:")
     print(str(len(Features))) # NOTE: I did not filter features for CSBD (top 5000)
+
     return dict(X=X, y=y, train_idx=train_idx, model=model, features=Features)
 
 
