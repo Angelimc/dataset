@@ -12,6 +12,8 @@ from sklearn.model_selection import GridSearchCV
 from sklearn.svm import LinearSVC
 from sklearn.feature_selection import SelectFromModel
 from sklearn.linear_model import LassoCV, Lasso
+import joblib
+from sklearn.metrics import mean_squared_error
 
 
 logging.basicConfig(level=logging.INFO)
@@ -70,41 +72,76 @@ def feature_selection_by_lasso_alpha(X_train, y_train, X_test, y_test, Features)
     """ Use Lasso to select features
     """
     Logger.info("Total features: {}".format(X_train.shape[1]))
-    lasso = Lasso()
-    lasso.fit(X_train, y_train)
-    train_score = lasso.score(X_train, y_train)
-    test_score = lasso.score(X_test, y_test)
-    coeff_used = np.sum(lasso.coef_ != 0)
+
+    #lassocv = LassoCV(alphas=None, cv=10, max_iter=100000, normalize=True)
+    #lassocv.fit(X_train, y_train)
+
+    lasso = Lasso(max_iter=10000, normalize=True)
+    #lasso.set_params(alpha=lassocv.alpha_)
+    lassocv_calculate_alpha = 0.00026253495223639133
+    lasso.set_params(alpha=lassocv_calculate_alpha)
+    # lasso.fit(X_train, y_train)
+
+    # For Lasso, the threshold defaults to 1e-5
+    sfm = SelectFromModel(lasso)
+    X_train = sfm.fit_transform(X_train, y_train)
+    X_test = sfm.transform(X_test)
+
+    mse = mean_squared_error(y_test, sfm.estimator_.predict(X_test))
+    train_score = sfm.estimator_.score(X_train, y_train)
+    test_score = sfm.estimator_.score(X_test, y_test)
+    coeff_used = np.sum(sfm.estimator_.coef_ != 0)
+    print("alpha selected: " + str(sfm.estimator_.alpha_))
+    print("mean squared error: " + str(mse))
     print("training score: " + str(train_score))
     print("test score: " + str(test_score))
     print("number of features used: " + str(coeff_used))
 
-    lasso001 = Lasso(alpha=0.01, max_iter=10e5)
-    lasso001.fit(X_train, y_train)
-    train_score001 = lasso001.score(X_train, y_train)
-    test_score001 = lasso001.score(X_test, y_test)
-    coeff_used001 = np.sum(lasso001.coef_ != 0)
-    print("training score for alpha=0.01: " + str(train_score001))
-    print("test score for alpha =0.01: " + str(test_score001))
-    print("number of features used: for alpha =0.01: " + str(coeff_used001))
+    mask = sfm.get_support() #list of booleans
+    new_features = []
+    for bool, feature in zip(mask, Features):
+        if bool:
+            new_features.append(feature)
+    Logger.info("selected {} features".format(len(new_features)))
+    assert(len(new_features) == X_train.shape[1] and X_train.shape[1] == X_test.shape[1])
 
-    lasso00001 = Lasso(alpha=0.0001, max_iter=10e5)
-    lasso00001.fit(X_train, y_train)
-    train_score00001 = lasso00001.score(X_train, y_train)
-    test_score00001 = lasso00001.score(X_test, y_test)
-    coeff_used00001 = np.sum(lasso00001.coef_ != 0)
-    print("training score for alpha=0.0001: " + str(train_score00001))
-    print("test score for alpha =0.0001: " + str(test_score00001))
-    print("number of features used: for alpha =0.0001:" + str(coeff_used00001))
+    return X_train, X_test, new_features
 
-    lasso000001 = Lasso(alpha=0.00001, max_iter=10e5)
-    lasso000001.fit(X_train, y_train)
-    train_score000001 = lasso000001.score(X_train, y_train)
-    test_score000001 = lasso000001.score(X_test, y_test)
-    coeff_used000001 = np.sum(lasso000001.coef_ != 0)
-    print("training score for alpha=0.00001: " + str(train_score000001))
-    print("test score for alpha =0.00001: " + str(test_score000001))
-    print("number of features used: for alpha =0.00001:" + str(coeff_used000001))
+    # lasso = Lasso()
+    # lasso.fit(X_train, y_train)
+    # train_score = lasso.score(X_train, y_train)
+    # test_score = lasso.score(X_test, y_test)
+    # coeff_used = np.sum(lasso.coef_ != 0)
+    # print("training score: " + str(train_score))
+    # print("test score: " + str(test_score))
+    # print("number of features used: " + str(coeff_used))
+    #
+    # lasso001 = Lasso(alpha=0.01, max_iter=10e5)
+    # lasso001.fit(X_train, y_train)
+    # train_score001 = lasso001.score(X_train, y_train)
+    # test_score001 = lasso001.score(X_test, y_test)
+    # coeff_used001 = np.sum(lasso001.coef_ != 0)
+    # print("training score for alpha=0.01: " + str(train_score001))
+    # print("test score for alpha =0.01: " + str(test_score001))
+    # print("number of features used: for alpha =0.01: " + str(coeff_used001))
+    #
+    # lasso00001 = Lasso(alpha=0.0001, max_iter=10e5)
+    # lasso00001.fit(X_train, y_train)
+    # train_score00001 = lasso00001.score(X_train, y_train)
+    # test_score00001 = lasso00001.score(X_test, y_test)
+    # coeff_used00001 = np.sum(lasso00001.coef_ != 0)
+    # print("training score for alpha=0.0001: " + str(train_score00001))
+    # print("test score for alpha =0.0001: " + str(test_score00001))
+    # print("number of features used: for alpha =0.0001:" + str(coeff_used00001))
+    #
+    # lasso000001 = Lasso(alpha=0.00001, max_iter=10e5)
+    # lasso000001.fit(X_train, y_train)
+    # train_score000001 = lasso000001.score(X_train, y_train)
+    # test_score000001 = lasso000001.score(X_test, y_test)
+    # coeff_used000001 = np.sum(lasso000001.coef_ != 0)
+    # print("training score for alpha=0.00001: " + str(train_score000001))
+    # print("test score for alpha =0.00001: " + str(test_score000001))
+    # print("number of features used: for alpha =0.00001:" + str(coeff_used000001))
 
     # Features = Features[(sfm.get_support())]
     # Logger.info("Selected features: {}".format(X_train.shape[1]))
@@ -152,11 +189,14 @@ def load_data(model, FeatureVectorizer, X_Btrain_samplenames, X_Mtrain_samplenam
             Parameters = {'C': [0.001, 0.01, 0.1, 1, 10, 100, 1000]}
             ClfLinear = GridSearchCV(LinearSVC(), Parameters, cv=5, scoring='f1', n_jobs=10)
             SVMLinearModels = ClfLinear.fit(X_train, y_train)
-            train_score = SVMLinearModels.score(X_train, y_train)
-            test_score = SVMLinearModels.score(X_test, y_test)
-            print("linear svc training score: " + str(train_score))
-            print("linear svc test score: " + str(test_score))
             dump(ClfLinear, model)
+        else:
+            ClfLinear = joblib.load(model)
+        SVMLinearModels = ClfLinear.fit(X_train, y_train)
+        train_score = SVMLinearModels.score(X_train, y_train)
+        test_score = SVMLinearModels.score(X_test, y_test)
+        print("linear svc training score: " + str(train_score))
+        print("linear svc test score: " + str(test_score))
 
     # Get feature names
     Features = FeatureVectorizer.get_feature_names()
@@ -164,7 +204,7 @@ def load_data(model, FeatureVectorizer, X_Btrain_samplenames, X_Mtrain_samplenam
 
     # For drebin
     #X_train, x_testM, x_testB, Features = feature_selection_by_lasso_alpha(X_train, y_train, X_test, y_test, Features)
-    feature_selection_by_lasso_alpha(X_train, y_train, X_test, y_test, Features)
+    X_train, X_test, Features = feature_selection_by_lasso_alpha(X_train, y_train, X_test, y_test, Features)
 
     print(X_train.shape[1])
     print(X_test.shape[1])
